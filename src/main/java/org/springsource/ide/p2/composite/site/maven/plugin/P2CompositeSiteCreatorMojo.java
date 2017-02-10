@@ -49,7 +49,7 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 	protected List<String> sites;
 
 	@Parameter(required = false)
-	String target;
+	File target;
 
 	@Parameter(required = true)
 	String name;
@@ -65,34 +65,44 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 		return docBuilder.newDocument();
 	}
 
+	protected void init() throws Exception {
+		if (target == null) {
+			target = new File(project.getBuild().getDirectory(), "site");
+		}
+
+		if (!target.isDirectory()) {
+			boolean ok = target.mkdirs();
+			if (!ok) {
+				throw new Exception("Couldn't create directory: " + target);
+			}
+		}
+
+	}
+
+	protected void generate() throws TransformerException, IOException, ParserConfigurationException {
+		if (sites == null || sites.isEmpty()) {
+			throw new IllegalArgumentException("No sites provided");
+		}
+
+		Document doc = generateCompositeArtifactsXML();
+		write(doc, new File(target, compositeArtifactsXml));
+
+		doc = generateCompositeContentXML();
+		write(doc, new File(target, compositeContentXml));
+
+		getLog().info("");
+		for (String url : sites) {
+			getLog().info("Adding or updating site : " + url);
+		}
+
+		getLog().info("");
+		getLog().info("Resulting site is located in '" + target + "'");			
+	}
+
 	public void execute() throws MojoExecutionException {
 		try {
-			if (target == null) {
-				target = project.getBuild().getDirectory() + "/site";
-			}
-
-			if (sites == null || sites.isEmpty()) {
-				throw new IllegalArgumentException("No sites provided");
-			}
-
-			File targetDir = new File(target);
-			if (!targetDir.isDirectory()) {
-				boolean ok = targetDir.mkdirs();
-				if (!ok) {
-					throw new Exception("Couldn't create directory: " + targetDir);
-				}
-			}
-
-			Document doc = generateCompositeArtifactsXML();
-			write(doc, new File(targetDir, compositeArtifactsXml));
-
-			doc = generateCompositeContentXML();
-			write(doc, new File(targetDir, compositeContentXml));
-
-			getLog().info("");
-			for (String url : sites) {
-				getLog().info("Adding site : " + url);
-			}
+			init();
+			generate();
 		} catch (Exception e) {
 			throw new MojoExecutionException("Problem executing: " + this, e);
 		}

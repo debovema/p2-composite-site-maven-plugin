@@ -23,12 +23,6 @@ import java.util.List;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -54,19 +48,11 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 
 	private File compositeArtifacts;
 
+	private File remoteFiles;
+
 	public void execute() throws MojoExecutionException {
 		try {
-			if (target == null) {
-				target = project.getBuild().getDirectory() + "/site";
-			}
-
-			File targetDir = new File(target);
-			if (!targetDir.isDirectory()) {
-				boolean ok = targetDir.mkdirs();
-				if (!ok) {
-					throw new Exception("Couldn't create directory: " + targetDir);
-				}
-			}
+			init();
 
 			getRemoteFiles();
 
@@ -75,17 +61,7 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 				sites.add(childToAdd);
 			}
 
-			Document doc = generateCompositeArtifactsXML();
-			write(doc, new File(targetDir, "compositeArtifacts.xml"));
-
-			doc = generateCompositeContentXML();
-			write(doc, new File(targetDir, "compositeContent.xml"));
-
-			getLog().info("");
-			for (String url : sites) {
-				getLog().info("Adding or updating site : " + url);
-			}
-
+			generate();
 		} catch (Exception e) {
 			throw new MojoExecutionException("Problem executing: " + this, e);
 		}
@@ -113,7 +89,7 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 	private File getRemoteFile(String fileName) throws IOException {
 		URL remoteCompositeArtifactsURL = new URL(site + "/" + fileName);
 		ReadableByteChannel rbc = Channels.newChannel(remoteCompositeArtifactsURL.openStream());
-		File result = new File(project.getBuild().getDirectory(), fileName);
+		File result = new File(remoteFiles, fileName);
 		try (FileOutputStream fos = new FileOutputStream(result)) {
 			fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
 		}
@@ -121,35 +97,16 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 	}
 
 	private void getRemoteFiles() throws IOException {
+		remoteFiles = new File(target, "remotes");
+		remoteFiles.mkdirs();
+
 		compositeArtifacts = getRemoteFile(compositeArtifactsXml);
 		File compositeContent = getRemoteFile(compositeContentXml);
 
 		getLog().info("Remote site is '" + site + "'");
+		getLog().info("");
 		getLog().info("Retrieved " + compositeArtifactsXml + " to '" + compositeArtifacts + "'");
 		getLog().info("Retrieved " + compositeContentXml + " to '" + compositeContent + "'");
-	}
-
-	private void write(Document doc, File file) throws TransformerException, IOException {
-		if (file.exists()) {
-			boolean ok = file.delete();
-			if (!ok) {
-				throw new IOException("File exists and couldn't be deleted: " + file);
-			}
-		}
-
-		TransformerFactory transformerFactory = TransformerFactory.newInstance();
-		Transformer transformer = transformerFactory.newTransformer();
-		transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-		transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-		DOMSource source = new DOMSource(doc);
-		StreamResult result = new StreamResult(file);
-
-		// Output to console for testing
-		// StreamResult result = new StreamResult(System.out);
-
-		transformer.transform(source, result);
-
-		getLog().debug("XML saved: " + file);
 	}
 
 }
