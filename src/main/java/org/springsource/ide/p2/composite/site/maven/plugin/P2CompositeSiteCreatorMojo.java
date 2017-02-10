@@ -89,8 +89,9 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 			doc = generateCompositeContentXML();
 			write(doc, new File(targetDir, compositeContentXml));
 
+			getLog().info("");
 			for (String url : sites) {
-				getLog().info(url);
+				getLog().info("Adding site : " + url);
 			}
 		} catch (Exception e) {
 			throw new MojoExecutionException("Problem executing: " + this, e);

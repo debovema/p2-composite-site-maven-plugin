@@ -81,9 +81,11 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 			doc = generateCompositeContentXML();
 			write(doc, new File(targetDir, "compositeContent.xml"));
 
+			getLog().info("");
 			for (String url : sites) {
-				getLog().info(url);
+				getLog().info("Adding or updating site : " + url);
 			}
+
 		} catch (Exception e) {
 			throw new MojoExecutionException("Problem executing: " + this, e);
 		}
@@ -122,8 +124,9 @@ public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 		compositeArtifacts = getRemoteFile(compositeArtifactsXml);
 		File compositeContent = getRemoteFile(compositeContentXml);
 
-		getLog().info("Retrieved " + compositeArtifactsXml + " from '" + compositeArtifacts + "'");
-		getLog().info("Retrieved " + compositeContentXml + " + from '" + compositeContent + "'");
+		getLog().info("Remote site is '" + site + "'");
+		getLog().info("Retrieved " + compositeArtifactsXml + " to '" + compositeArtifacts + "'");
+		getLog().info("Retrieved " + compositeContentXml + " to '" + compositeContent + "'");
 	}
 
 	private void write(Document doc, File file) throws TransformerException, IOException {
