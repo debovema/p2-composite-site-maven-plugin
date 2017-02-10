@@ -12,7 +12,12 @@
 package org.springsource.ide.p2.composite.site.maven.plugin;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -25,54 +30,34 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.project.MavenProject;
 import org.w3c.dom.Document;
-import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 /**
  * A simple mojo that generates a composite update site from a list of urls of
  * other update sites.
  */
-@Mojo(name = "generate", defaultPhase = LifecyclePhase.GENERATE_RESOURCES, requiresProject = true)
-public class P2CompositeSiteCreatorMojo extends AbstractMojo {
-
-	public static final String compositeArtifactsXml = "compositeArtifacts.xml";
-	public static final String compositeContentXml = "compositeContent.xml";
-
-	@Parameter(required = false)
-	protected List<String> sites;
-
-	@Parameter(required = false)
-	String target;
+@Mojo(name = "update", defaultPhase = LifecyclePhase.GENERATE_RESOURCES, requiresProject = true)
+public class P2CompositeSiteUpdaterMojo extends P2CompositeSiteCreatorMojo {
 
 	@Parameter(required = true)
-	String name;
+	String site;
 
-	@Component
-	MavenProject project;
+	@Parameter(required = true)
+	String childToAdd;
 
-	private String timeStamp = "" + System.currentTimeMillis();
-
-	private Document createDocument() throws ParserConfigurationException {
-		DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
-		DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
-		return docBuilder.newDocument();
-	}
+	private File compositeArtifacts;
 
 	public void execute() throws MojoExecutionException {
 		try {
 			if (target == null) {
 				target = project.getBuild().getDirectory() + "/site";
-			}
-
-			if (sites == null || sites.isEmpty()) {
-				throw new IllegalArgumentException("No sites provided");
 			}
 
 			File targetDir = new File(target);
@@ -83,11 +68,18 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 				}
 			}
 
+			getRemoteFiles();
+
+			sites = getExistingSites();
+			if (!sites.contains(childToAdd)) {
+				sites.add(childToAdd);
+			}
+
 			Document doc = generateCompositeArtifactsXML();
-			write(doc, new File(targetDir, compositeArtifactsXml));
+			write(doc, new File(targetDir, "compositeArtifacts.xml"));
 
 			doc = generateCompositeContentXML();
-			write(doc, new File(targetDir, compositeContentXml));
+			write(doc, new File(targetDir, "compositeContent.xml"));
 
 			for (String url : sites) {
 				getLog().info(url);
@@ -95,6 +87,43 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 		} catch (Exception e) {
 			throw new MojoExecutionException("Problem executing: " + this, e);
 		}
+	}
+
+	private List<String> getExistingSites() throws ParserConfigurationException, SAXException, IOException {
+		List<String> result = new ArrayList<String>();
+
+		DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+		DocumentBuilder documentBuilder = dbFactory.newDocumentBuilder();
+		Document document = documentBuilder.parse(compositeArtifacts);
+
+		NodeList children = document.getDocumentElement().getElementsByTagName("children");
+		NodeList childrenList = children.item(0).getChildNodes();
+
+		for (int i = 0; i < childrenList.getLength(); i++) {
+			Node child = childrenList.item(i);
+			if ("child".equals(child.getNodeName())) {
+				result.add(child.getAttributes().getNamedItem("location").getNodeValue());
+			}
+		}
+		return result;
+	}
+
+	private File getRemoteFile(String fileName) throws IOException {
+		URL remoteCompositeArtifactsURL = new URL(site + "/" + fileName);
+		ReadableByteChannel rbc = Channels.newChannel(remoteCompositeArtifactsURL.openStream());
+		File result = new File(project.getBuild().getDirectory(), fileName);
+		try (FileOutputStream fos = new FileOutputStream(result)) {
+			fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+		}
+		return result;
+	}
+
+	private void getRemoteFiles() throws IOException {
+		compositeArtifacts = getRemoteFile(compositeArtifactsXml);
+		File compositeContent = getRemoteFile(compositeContentXml);
+
+		getLog().info("Retrieved " + compositeArtifactsXml + " from '" + compositeArtifacts + "'");
+		getLog().info("Retrieved " + compositeContentXml + " + from '" + compositeContent + "'");
 	}
 
 	private void write(Document doc, File file) throws TransformerException, IOException {
@@ -120,43 +149,4 @@ public class P2CompositeSiteCreatorMojo extends AbstractMojo {
 		getLog().debug("XML saved: " + file);
 	}
 
-	protected Document generateCompositeContentXML() throws ParserConfigurationException {
-		return generateCompositeXML("org.eclipse.equinox.internal.p2.metadata.repository.CompositeMetadataRepository");
-	}
-
-	protected Document generateCompositeArtifactsXML() throws ParserConfigurationException {
-		return generateCompositeXML("org.eclipse.equinox.internal.p2.artifact.repository.CompositeArtifactRepository");
-	}
-
-	private Document generateCompositeXML(String repoType) throws ParserConfigurationException {
-		Document doc = createDocument();
-
-		Element repository = doc.createElement("repository");
-
-		doc.appendChild(repository);
-		repository.setAttribute("name", name);
-		repository.setAttribute("type", repoType);
-		repository.setAttribute("version", "1.0.0");
-
-		Element properties = doc.createElement("properties");
-		repository.appendChild(properties);
-		properties.setAttribute("size", "1");
-
-		Element property = doc.createElement("property");
-		properties.appendChild(property);
-		property.setAttribute("name", "p2.timestamp");
-		property.setAttribute("value", timeStamp);
-
-		Element children = doc.createElement("children");
-		repository.appendChild(children);
-		children.setAttribute("size", "" + sites.size());
-
-		for (String siteStr : sites) {
-			Element child = doc.createElement("child");
-			children.appendChild(child);
-			child.setAttribute("location", siteStr);
-		}
-
-		return doc;
-	}
 }
